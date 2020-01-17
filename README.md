@@ -34,10 +34,13 @@
   - [Compare the ratio of normalized counts from the MinION and Illumina sequenced samples](#compare-the-ratio-of-normalized-counts-from-the-minion-and-illumina-sequenced-samples)
     - [Set R inputs](#set-r-inputs)
     - [Load R packages and view sessionInfo](#load-r-packages-and-view-sessioninfo)
+    - [Load R functions](#load-r-functions)
     - [Create normalized counts data frame](#create-normalized-counts-data-frame)
     - [Exclude Wolbachia genes from counts dataframe](#exclude-wolbachia-genes-from-counts-dataframe)
-    - [Plot gene length versus log2 MinION:Illumina normalized count ratio for each gene](#plot-gene-length-versus-log2-minionillumina-normalized-count-ratio-for-each-gene)
+    - [Calculates log2 MinION:Illumina normalized count ratio for each gene](#calculates-log2-minionillumina-normalized-count-ratio-for-each-gene)
     - [Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2](#identifies-the-number-of-genes-with-a-log2-minionillumina-normalized-count-ratio-2-and--2)
+    - [Plot gene length versus log2 MinION:Illumina normalized count ratios for each gene](#plot-gene-length-versus-log2-minionillumina-normalized-count-ratios-for-each-gene)
+    - [Use density plot to visualize the gene length versus log2 MinION:Illumina normalized count ratios for each gene](#use-density-plot-to-visualize-the-gene-length-versus-log2-minionillumina-normalized-count-ratios-for-each-gene)
 
 <!-- /MarkdownTOC -->
 
@@ -225,6 +228,20 @@ loaded via a namespace (and not attached):
 [36] munsell_0.5.0     crayon_1.3.
 ```
 
+### Load R functions
+```{r}
+lm_eqn <- function(df){
+    x <- df[,1]
+    y <- df[,2]
+    m <- lm(y ~ x, df);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+```
+
 ### Create normalized counts data frame
 ```{r}
 illumina_quant <- read.delim(paste0(QUANT_DIR,"/SRR3111490.salmon_optimized.counts/quant.sf"))
@@ -243,29 +260,66 @@ rownames(counts) <- illumina_quant[,1]
 counts <- counts[!grepl("^gene",rownames(counts)),]
 ```
 
-### Plot gene length versus log2 MinION:Illumina normalized count ratio for each gene
+### Calculates log2 MinION:Illumina normalized count ratio for each gene
 
-Genes with a ratio of >2 have significantly more counts from MinION while genes with a ratio of <-2 have significantly more counts from Illumina. From the plot, the only genes skewed towards the MinION-sequenced sample are those of a smaller gene length, indicating most of the counts from the MinION sample are being assigned to smaller genes. On the other hand, more of the larger genes are skewed towards the Illumina sample, indicating the counts are more evenly distributed among the different genes.
+Genes with a ratio of >2 have significantly more counts from MinION while genes with a ratio of <-2 have significantly more counts from Illumina.
 
 ```{r,fig.height=4,fig.width=6}
 counts.plot.df <- as.data.frame(cbind(counts$MinION/counts$Illumina,
-                                    illumina_quant[,2]))
+                                      illumina_quant[!grepl("^gene",illumina_quant[,1]),2]))
+counts.plot.df[,1] <- log2(counts.plot.df[,1])
+```
 
-ratio.plot <- ggplot()+
+### Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2
+
+The number of genes with 4x greater counts in the MinION sample:
+```{r}
+table(counts.plot.df[,1] > 2)
+```
+
+```{r, eval = F}
+FALSE  TRUE 
+10113  1219
+```
+
+The number of genes with 4x greater counts in the Illumina sample:
+```{r}
+table(counts.plot.df[,1] < -2)
+```
+
+```{r, eval = F}
+FALSE  TRUE 
+ 7053  4279 
+```
+
+### Plot gene length versus log2 MinION:Illumina normalized count ratios for each gene
+
+The only genes skewed towards the MinION-sequenced sample are those of a smaller gene length, indicating most of the counts from the MinION sample are being assigned to smaller genes. On the other hand, more of the larger genes are skewed towards the Illumina sample, indicating the counts are more evenly distributed among the different genes.
+
+```{r,fig.height=5,fig.width=6}
+counts.plot.df <- counts.plot.df[counts.plot.df != Inf,]
+counts.plot.df <- counts.plot.df[counts.plot.df != -Inf,]
+counts.plot.df <- counts.plot.df[!is.na(counts.plot.df[,1]),]
+
+ratio.plot <- ggplot(mapping=aes(x=counts.plot.df[,2],y=counts.plot.df[,1]))+
   geom_hline(mapping=aes(yintercept=2),color="red",lty="dashed")+
   geom_hline(mapping=aes(yintercept=-2),color="red",lty="dashed")+
-  geom_point(mapping=aes(x=counts.plot.df[,2],y=log2(counts.plot.df[,1])),size=0.5)+
+  geom_point(size=0.5)+
   labs(x="gene length (bp)", y = "log2 normalized MinION counts:normalized Illumina counts")+
+  coord_cartesian(ylim=c(-11,11))+
+  scale_x_continuous(lim=c(0,NA))+
+  geom_smooth(method='lm',formula=y~x)+
+  geom_text(mapping=aes(x=0, y = -10), label = lm_eqn(counts.plot.df),hjust=0,parse = TRUE)+
   theme_bw()
 
 pdf(paste0(OUTPUT_DIR,"/ratio_plot.pdf"),
-    height=4,
+    height=5,
     width=6)
 print(ratio.plot)
 dev.off()
 
 png(paste0(OUTPUT_DIR,"/ratio_plot.png"),
-    height=4,
+    height=5,
     width=6,
     units = "in",res=300)
 print(ratio.plot)
@@ -276,25 +330,36 @@ print(ratio.plot)
 
 ![Image description](/images/ratio_plot.png)
 
-### Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2
+### Use density plot to visualize the gene length versus log2 MinION:Illumina normalized count ratios for each gene
 
-The number of genes with 4x greater counts in the MinION sample:
-```{r}
-table(log2(counts.plot.df[,1]) > 2)
+```{r,fig.height=5,fig.width=6}
+density_ratio.plot <- ggplot(mapping=aes(x=counts.plot.df[,2],y=counts.plot.df[,1]))+
+  geom_hline(mapping=aes(yintercept=2),color="red",lty="dashed")+
+  geom_hline(mapping=aes(yintercept=-2),color="red",lty="dashed")+
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon")+
+  labs(x="gene length (bp)", y = "log2 normalized MinION counts:normalized Illumina counts")+
+  coord_cartesian(ylim=c(-11,11))+
+  scale_x_continuous(lim=c(0,NA))+
+  geom_smooth(method='lm',formula=y~x)+
+  geom_text(mapping=aes(x=0, y = -10), label = lm_eqn(counts.plot.df),hjust=0,parse = TRUE)+
+  scale_fill_viridis_c()+
+  guides(fill = F)+
+  theme_bw()
+
+pdf(paste0(OUTPUT_DIR,"/density_ratio_plot.pdf"),
+    height=5,
+    width=6)
+print(density_ratio.plot)
+dev.off()
+
+png(paste0(OUTPUT_DIR,"/density_ratio_plot.png"),
+    height=5,
+    width=6,
+    units = "in",res=300)
+print(density_ratio.plot)
+dev.off()
+
+print(density_ratio.plot)
 ```
 
-```{r, eval = F}
-FALSE  TRUE 
-10113  1219
-```
-
-The number of genes with 4x greater counts in the Illumina sample:
-```{r}
-table(log2(counts.plot.df[,1]) < -2)
-```
-
-```{r, eval = F}
-FALSE  TRUE 
- 7053  4279 
-```
-
+![Image description](/images/density_ratio_plot.png)
