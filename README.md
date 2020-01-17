@@ -1,5 +1,45 @@
 # bmalayi_directrnaseq
  
+<!-- MarkdownTOC -->
+
+- [Set software and directory paths](#set-software-and-directory-paths)
+  - [Software](#software)
+  - [Directories](#directories)
+  - [Create directories](#create-directories)
+- [Determine whether direct RNA sequencing with the MinION is biased towards short transcripts](#determine-whether-direct-rna-sequencing-with-the-minion-is-biased-towards-short-transcripts)
+  - [Set up B. malayi + wBm combined reference files](#set-up-b-malayi--wbm-combined-reference-files)
+    - [Download B. malayi and wBm reference files from WormBase and SRA](#download-b-malayi-and-wbm-reference-files-from-wormbase-and-sra)
+    - [Create nucleotide gene FASTA files](#create-nucleotide-gene-fasta-files)
+      - [Input Sets](#input-sets)
+      - [Commands](#commands)
+    - [Create a combined reference from the B. malayi and wBm nucleotide gene FASTA files](#create-a-combined-reference-from-the-b-malayi-and-wbm-nucleotide-gene-fasta-files)
+      - [Commands](#commands-1)
+  - [Download Illumina reads from adult female B. malayi from the SRA](#download-illumina-reads-from-adult-female-b-malayi-from-the-sra)
+      - [Inputs](#inputs)
+      - [Commands](#commands-2)
+  - [Quantify B. malayi genes from Illumina sequenced adult female samples](#quantify-b-malayi-genes-from-illumina-sequenced-adult-female-samples)
+    - [Create index for Salmon read-mode quantification](#create-index-for-salmon-read-mode-quantification)
+      - [Inputs](#inputs-1)
+      - [Commands](#commands-3)
+    - [Quantify genes from Illumina reads using read-mode Salmon](#quantify-genes-from-illumina-reads-using-read-mode-salmon)
+      - [Inputs](#inputs-2)
+      - [Commands](#commands-4)
+  - [Quantify B. malayi genes from MinION sequenced adult female samples](#quantify-b-malayi-genes-from-minion-sequenced-adult-female-samples)
+    - [Map MinION reads to gene fasta for alignment-mode Salmon quantification](#map-minion-reads-to-gene-fasta-for-alignment-mode-salmon-quantification)
+      - [Inputs](#inputs-3)
+      - [Commands](#commands-5)
+    - [Quantify genes from MinION reads using alignment-mode Salmon](#quantify-genes-from-minion-reads-using-alignment-mode-salmon)
+      - [Inputs](#inputs-4)
+      - [Commands](#commands-6)
+  - [Compare the ratio of normalized counts from the MinION and Illumina sequenced samples](#compare-the-ratio-of-normalized-counts-from-the-minion-and-illumina-sequenced-samples)
+    - [Set R inputs](#set-r-inputs)
+    - [Load R packages and view sessionInfo](#load-r-packages-and-view-sessioninfo)
+    - [Create normalized counts data frame](#create-normalized-counts-data-frame)
+    - [Exclude Wolbachia genes from counts dataframe](#exclude-wolbachia-genes-from-counts-dataframe)
+    - [Plot gene length versus log2 MinION:Illumina normalized count ratio for each gene](#plot-gene-length-versus-log2-minionillumina-normalized-count-ratio-for-each-gene)
+    - [Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2](#identifies-the-number-of-genes-with-a-log2-minionillumina-normalized-count-ratio-2-and--2)
+
+<!-- /MarkdownTOC -->
 
 
 # Set software and directory paths
@@ -142,15 +182,15 @@ THREADS=4
 echo -e ""$SALMON_BIN_DIR"/salmon quant -t "$NUC_GENE_FNA" --libType A -a "$WORKING_DIR"/bmalayi_minion.bam -p "$THREADS" -o "$WORKING_DIR"/quant/MinION.salmon_optimized.counts" | qsub -P jdhotopp-lab -q threaded.q -pe thread "$THREADS" -l mem_free=5G -N salmon -wd "$WORKING_DIR"/quant/
 ```
 
-### Compare the ratio of normalized counts from the MinION and Illumina sequenced samples
+## Compare the ratio of normalized counts from the MinION and Illumina sequenced samples
 
-#### Set R inputs
+### Set R inputs
 
 ```{r}
 QUANT_DIR="Z:/EBMAL/mchung_dir/bmalayi_directrna/quant"
 ```
 
-#### Load R packages and view sessionInfo
+### Load R packages and view sessionInfo
 
 ```{r}
 library(ggplot2)
@@ -185,7 +225,7 @@ loaded via a namespace (and not attached):
 [36] munsell_0.5.0     crayon_1.3.
 ```
 
-#### Create normalized counts data frame
+### Create normalized counts data frame
 ```{r}
 illumina_quant <- read.delim(paste0(QUANT_DIR,"/SRR3111490.salmon_optimized.counts/quant.sf"))
 minion_quant <- read.delim(paste0(QUANT_DIR,"/MinION.salmon_optimized.counts/quant.sf"))
@@ -198,14 +238,14 @@ colnames(counts) <- c("Illumina","MinION")
 rownames(counts) <- illumina_quant[,1]
 ```
 
-#### Exclude Wolbachia genes from counts dataframe
+### Exclude Wolbachia genes from counts dataframe
 ```{r}
 counts <- counts[!grepl("^gene",rownames(counts)),]
 ```
 
-#### Plot gene length versus log2 MinION:Illumina normalized count ratio for each gene
+### Plot gene length versus log2 MinION:Illumina normalized count ratio for each gene
 
-Genes with a ratio of >2 have more counts from MinION while genes with a ratio of <-2 have more counts from Illumina. From the plot, the only genes skewed towards the MinION-sequenced sample are those of a smaller gene length, indicating most of the counts from the MinION sample are being assigned to smaller genes. On the other hand, more of the larger genes are skewed towards the Illumina sample, indicating the counts are more evenly distributed among the different genes.
+Genes with a ratio of >2 have significantly more counts from MinION while genes with a ratio of <-2 have significantly more counts from Illumina. From the plot, the only genes skewed towards the MinION-sequenced sample are those of a smaller gene length, indicating most of the counts from the MinION sample are being assigned to smaller genes. On the other hand, more of the larger genes are skewed towards the Illumina sample, indicating the counts are more evenly distributed among the different genes.
 
 ```{r,fig.height=4,fig.width=6}
 counts.plot.df <- as.data.frame(cbind(counts$MinION/counts$Illumina,
@@ -236,7 +276,7 @@ print(ratio.plot)
 
 ![Image description](/images/ratio_plot.png)
 
-#### Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2
+### Identifies the number of genes with a log2 MinION:Illumina normalized count ratio >2 and <-2
 
 The number of genes with 4x greater counts in the MinION sample:
 ```{r}
